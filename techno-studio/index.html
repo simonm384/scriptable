@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Techno Studio</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%230c0d12'/><rect x='3' y='3' width='4' height='4' fill='%23ff3b6b'/><rect x='9' y='9' width='4' height='4' fill='%2318e0c8'/></svg>" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◼</span>
+      <h1>TECHNO&nbsp;STUDIO</h1>
+    </div>
+
+    <div class="transport">
+      <button id="playBtn" class="btn btn-play" title="Start / Stop (Leertaste)">▶</button>
+      <div class="control">
+        <label for="bpm">BPM</label>
+        <input id="bpm" type="number" min="60" max="200" value="130" />
+      </div>
+      <div class="control">
+        <label for="swing">Swing</label>
+        <input id="swing" type="range" min="0" max="60" value="0" />
+        <span id="swingVal" class="val">0%</span>
+      </div>
+      <div class="control">
+        <label for="master">Volume</label>
+        <input id="master" type="range" min="0" max="100" value="80" />
+      </div>
+    </div>
+
+    <div class="midi-status">
+      <label for="midiSelect">MIDI&nbsp;Input</label>
+      <select id="midiSelect">
+        <option value="">— Kein MIDI-Gerät —</option>
+      </select>
+      <span id="midiLed" class="led" title="MIDI-Aktivität"></span>
+    </div>
+  </header>
+
+  <main>
+    <!-- DRUM SEQUENCER -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Drum Sequencer</h2>
+        <div class="panel-actions">
+          <button id="randomDrums" class="btn small">Zufall</button>
+          <button id="clearDrums" class="btn small">Leeren</button>
+        </div>
+      </div>
+      <div id="drumGrid" class="grid"></div>
+    </section>
+
+    <!-- BASS / LEAD SYNTH -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Synth</h2>
+        <div class="panel-actions">
+          <span class="hint">MIDI-Keyboard spielt diesen Synth · oder Schritte unten klicken</span>
+        </div>
+      </div>
+
+      <div class="synth-controls">
+        <div class="control">
+          <label for="synthTarget">Spielen mit MIDI</label>
+          <select id="synthTarget">
+            <option value="bass">Bass</option>
+            <option value="lead">Lead / Stab</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="bassWave">Bass-Wellenform</label>
+          <select id="bassWave">
+            <option value="sawtooth">Saw</option>
+            <option value="square">Square</option>
+            <option value="triangle">Triangle</option>
+          </select>
+        </div>
+        <div class="control knob">
+          <label for="cutoff">Filter (CC74)</label>
+          <input id="cutoff" type="range" min="100" max="12000" value="1200" />
+        </div>
+        <div class="control knob">
+          <label for="reso">Resonanz (CC71)</label>
+          <input id="reso" type="range" min="0" max="25" value="8" />
+        </div>
+        <div class="control knob">
+          <label for="decay">Decay</label>
+          <input id="decay" type="range" min="50" max="900" value="280" />
+        </div>
+        <div class="control">
+          <label for="octave">Oktave</label>
+          <select id="octave">
+            <option value="1">+1</option>
+            <option value="0" selected>0</option>
+            <option value="-1">-1</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="panel-actions inline">
+        <button id="randomBass" class="btn small">Bass-Zufall</button>
+        <button id="clearBass" class="btn small">Bass leeren</button>
+      </div>
+      <div id="bassGrid" class="grid bass"></div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <span id="status">Bereit. Drücke ▶ oder die Leertaste zum Starten.</span>
+    <span class="tip">Tipp: MIDI funktioniert in Chrome/Edge. App über <code>localhost</code> öffnen.</span>
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
