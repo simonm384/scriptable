@@ -7,6 +7,19 @@ ohne Installation. Alle Sounds (Kick, Clap, Snare, Hats, Bass, Lead) werden live
 
 ## Schnellstart
 
+### Windows – am einfachsten (Doppelklick)
+
+1. Doppelklick auf **`start.bat`** im Ordner `techno-studio`.
+2. Ein schwarzes Fenster öffnet sich und der Browser startet automatisch unter
+   <http://localhost:8000>.
+3. Das schwarze Fenster **offen lassen**, solange du Musik machst. Zum Beenden einfach schließen.
+
+> Beim ersten Start meldet Windows evtl. „PC wurde geschützt" → auf **„Weitere Informationen"**
+> → **„Trotzdem ausführen"** klicken. Falls Python fehlt, sagt dir das Fenster, wie du es
+> (einmalig, kostenlos) installierst.
+
+### Mac / Linux / manuell
+
 Web MIDI funktioniert nur in einem „sicheren Kontext" (also über `localhost`, nicht per
 Doppelklick als `file://`). Darum die App über einen kleinen lokalen Server öffnen:
 
