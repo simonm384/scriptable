@@ -41,6 +41,24 @@
   </header>
 
   <main>
+    <!-- SONG SPEICHERN / LADEN -->
+    <section class="panel song-bar">
+      <div class="panel-actions wrap">
+        <input id="songName" type="text" class="song-name" placeholder="Songname" />
+        <button id="songSave" class="btn small">💾 Speichern</button>
+        <select id="songSelect">
+          <option value="">— Gespeicherte Songs —</option>
+        </select>
+        <button id="songLoad" class="btn small">Laden</button>
+        <button id="songDelete" class="btn small">Löschen</button>
+        <span class="sep"></span>
+        <button id="songExport" class="btn small">⬇ Als Datei</button>
+        <label class="btn small file-label">⬆ Datei laden
+          <input id="songImport" type="file" accept="application/json,.json" hidden />
+        </label>
+      </div>
+    </section>
+
     <!-- DRUM SEQUENCER -->
     <section class="panel">
       <div class="panel-head">
@@ -64,10 +82,13 @@
 
       <div class="synth-controls">
         <div class="control">
-          <label for="synthTarget">Spielen mit MIDI</label>
-          <select id="synthTarget">
+          <label for="instrument">Instrument (MIDI &amp; Tasten)</label>
+          <select id="instrument">
             <option value="bass">Bass</option>
             <option value="lead">Lead / Stab</option>
+            <option value="pluck">Pluck</option>
+            <option value="pad">Pad / Fläche</option>
+            <option value="keys">Keys / Piano</option>
           </select>
         </div>
         <div class="control">
@@ -105,6 +126,66 @@
         <button id="clearBass" class="btn small">Bass leeren</button>
       </div>
       <div id="bassGrid" class="grid bass"></div>
+
+      <div class="kb-head">
+        <span class="hint">Klaviatur: klicken oder Tasten <code>A S D F G H J K</code> spielen (gewähltes Instrument)</span>
+      </div>
+      <div id="keyboard" class="keyboard"></div>
+    </section>
+
+    <!-- KI / CLAUDE -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>KI-Producer (Claude)</h2>
+        <div class="panel-actions">
+          <button id="aiKeyBtn" class="btn small">API-Schlüssel</button>
+        </div>
+      </div>
+      <div class="ai-row">
+        <input id="aiPrompt" type="text" class="ai-input"
+               placeholder="z. B. düsterer harter Warehouse-Techno mit rollendem Bass" />
+        <button id="aiGenerate" class="btn">✨ Pattern erzeugen</button>
+      </div>
+      <p id="aiStatus" class="ai-status">
+        Beschreibe einen Stil – Claude baut Beat &amp; Bassline für dich. (Einmalig API-Schlüssel hinterlegen.)
+      </p>
+    </section>
+
+    <!-- GESANG -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Gesang aufnehmen &amp; verändern</h2>
+        <div class="panel-actions">
+          <button id="recBtn" class="btn small">● Aufnehmen</button>
+          <button id="vocPlay" class="btn small" disabled>▶ Abspielen</button>
+          <button id="vocStop" class="btn small" disabled>■ Stop</button>
+          <label class="chk"><input type="checkbox" id="vocLoop" /> Loop</label>
+        </div>
+      </div>
+      <div class="synth-controls">
+        <div class="control knob">
+          <label for="vocPitch">Tonhöhe (Halbtöne)</label>
+          <input id="vocPitch" type="range" min="-12" max="12" value="0" />
+          <span id="vocPitchVal" class="val">0</span>
+        </div>
+        <div class="control knob">
+          <label for="vocFilter">Filter</label>
+          <input id="vocFilter" type="range" min="300" max="16000" value="12000" />
+        </div>
+        <div class="control knob">
+          <label for="vocReverb">Hall</label>
+          <input id="vocReverb" type="range" min="0" max="100" value="25" />
+        </div>
+        <div class="control knob">
+          <label for="vocDelay">Echo</label>
+          <input id="vocDelay" type="range" min="0" max="100" value="0" />
+        </div>
+        <div class="control knob">
+          <label for="vocGain">Lautstärke</label>
+          <input id="vocGain" type="range" min="0" max="150" value="100" />
+        </div>
+      </div>
+      <p id="vocStatus" class="ai-status">Mikrofon erlauben, aufnehmen, dann mit den Reglern verändern.</p>
     </section>
   </main>
 

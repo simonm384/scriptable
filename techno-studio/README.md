@@ -34,6 +34,15 @@ Dann im **Chrome** oder **Edge** öffnen: <http://localhost:8000>
 > Das Sequencing und alle Sounds funktionieren aber in jedem modernen Browser – nur der
 > MIDI-Anschluss braucht Chrome/Edge.
 
+## Funktionen im Überblick
+
+- 🥁 **Drum-Sequencer** (Kick, Clap, Snare, Hi-Hat, Open Hat)
+- 🎚️ **Bass-Sequencer** + spielbarer Synth
+- 🎹 **5 Instrumente** (Bass, Lead, Pluck, Pad, Keys) – per MIDI **oder** Bildschirm-Klaviatur spielbar
+- 💾 **Songs speichern & laden** (im Browser und als `.json`-Datei)
+- 🤖 **KI-Producer (Claude)** – beschreibe einen Stil, Claude baut Beat & Bassline
+- 🎤 **Gesang aufnehmen & verändern** (Tonhöhe, Filter, Hall, Echo)
+
 ## Bedienung
 
 | Element            | Funktion                                                              |
@@ -44,13 +53,38 @@ Dann im **Chrome** oder **Edge** öffnen: <http://localhost:8000>
 | **Volume**         | Master-Lautstärke                                                    |
 | **Drum-Grid**      | Felder anklicken = Schlag an/aus. Jede 4. Spalte = Viertel-Zählzeit  |
 | **Synth-Grid**     | Bassline klicken (eine Note pro Spalte)                              |
+| **Instrument**     | Wähle das Instrument für MIDI-Keyboard und Bildschirm-Klaviatur      |
+| **Klaviatur**      | Klicken oder Tasten `A S D F G H J K` (+ `W E T Y U` für Halbtöne)   |
 | **Zufall / Leeren**| Pattern automatisch erzeugen oder löschen                           |
+
+### Song speichern & laden
+
+- **💾 Speichern** legt den Song unter dem eingegebenen Namen im Browser ab.
+- **Laden / Löschen** über die Auswahlliste.
+- **⬇ Als Datei** exportiert den kompletten Song (inkl. Gesangsaufnahme) als `.json`.
+- **⬆ Datei laden** importiert eine solche Datei wieder.
+
+### 🤖 KI-Producer (Claude)
+
+1. Auf **API-Schlüssel** klicken und einen Anthropic-API-Schlüssel eingeben
+   (von <https://console.anthropic.com> – wird nur lokal im Browser gespeichert).
+2. Einen Stil beschreiben, z. B. *„düsterer harter Warehouse-Techno mit rollendem Bass"*.
+3. **✨ Pattern erzeugen** – Claude (`claude-opus-4-8`) baut Drums, Bassline und setzt das Tempo.
+
+> Hinweis: Der Schlüssel wird direkt aus dem Browser an die Anthropic-API gesendet und nur
+> lokal gespeichert. Nutze das nur auf deinem eigenen Rechner. Es können API-Kosten anfallen.
+
+### 🎤 Gesang aufnehmen
+
+1. **● Aufnehmen** klicken und Mikrofon-Zugriff erlauben → singen → **■ Stoppen**.
+2. **▶ Abspielen** und mit den Reglern **Tonhöhe, Filter, Hall, Echo** verändern.
+3. **Loop** aktiviert die Endloswiedergabe. Die Aufnahme wird beim Datei-Export mitgespeichert.
 
 ### MIDI-Keyboard / Controller
 
 1. Gerät per USB anschließen **bevor** oder **während** die Seite offen ist.
 2. Oben rechts unter **MIDI Input** das Gerät auswählen (das erste wird automatisch gewählt).
-3. Tasten spielen → steuert den unter „Spielen mit MIDI" gewählten Synth (Bass oder Lead).
+3. Tasten spielen → steuert das unter **Instrument** gewählte Instrument.
 4. Die LED blinkt bei MIDI-Aktivität.
 
 **Belegte Controller (CC):**
@@ -71,10 +105,13 @@ techno-studio/
 ├── index.html          # UI-Struktur
 ├── css/style.css       # dunkle Techno-Optik
 └── js/
-    ├── audio-engine.js # Synthese aller Sounds (Web Audio API)
+    ├── audio-engine.js # Synthese aller Sounds & Instrumente (Web Audio API)
     ├── sequencer.js    # präziser Step-Sequencer (Lookahead-Scheduling)
     ├── midi.js         # Web-MIDI-Anbindung
-    └── app.js          # verbindet UI, Sequencer, MIDI und Audio
+    ├── ai.js           # KI-Producer (Anthropic / Claude API)
+    ├── recorder.js     # Gesangsaufnahme + Effektkette
+    ├── storage.js      # Songs speichern/laden (localStorage & Datei)
+    └── app.js          # verbindet UI, Sequencer, MIDI, KI, Gesang und Audio
 ```
 
 Reines Vanilla-JavaScript (ES-Module), keine externen Abhängigkeiten.

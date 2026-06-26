@@ -3,10 +3,15 @@
 import { AudioEngine } from "./audio-engine.js";
 import { Sequencer } from "./sequencer.js";
 import { MidiController } from "./midi.js";
+import { AIComposer } from "./ai.js";
+import { VocalRecorder } from "./recorder.js";
+import * as Songs from "./storage.js";
 
 const engine = new AudioEngine();
 const seq = new Sequencer(engine);
 const midi = new MidiController();
+const ai = new AIComposer();
+const vocals = new VocalRecorder(engine);
 
 const STEPS = 16;
 
@@ -259,9 +264,8 @@ function setupMidiHandlers() {
   midi.on("activity", blinkLed);
   midi.on("noteOn", (note, vel) => {
     engine.init(); engine.resume();
-    const target = $("synthTarget").value; // "bass" | "lead"
     // dur = Infinity (≠ null) -> Note wird gehalten, bis noteOff den Release auslöst
-    const held = engine.playNote(target, note, engine.now, vel, Infinity);
+    const held = engine.playNote(currentInstrument(), note, engine.now, vel, Infinity);
     heldVoices.set(note, held);
   });
   midi.on("noteOff", (note) => {
@@ -327,11 +331,297 @@ function populateMidiSelect(inputs) {
   }
 }
 
+function currentInstrument() {
+  return $("instrument").value || "bass";
+}
+
+// ---------- Bildschirm-Klaviatur ----------
+const keyMap = { a:60, w:61, s:62, e:63, d:64, f:65, t:66, g:67, y:68, h:69, u:70, j:71, k:72 };
+const noteNames = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const kbVoices = new Map();   // midi -> voice
+const kbCells = new Map();    // midi -> DOM element
+
+function isBlack(midi) { return [1,3,6,8,10].includes(midi % 12); }
+
+function kbNoteOn(midi, vel = 0.85) {
+  if (kbVoices.has(midi)) return;
+  engine.init(); engine.resume();
+  const v = engine.playNote(currentInstrument(), midi, engine.now, vel, Infinity);
+  kbVoices.set(midi, v);
+  const el = kbCells.get(midi);
+  if (el) el.classList.add("held");
+}
+function kbNoteOff(midi) {
+  const v = kbVoices.get(midi);
+  if (v) { engine.stopNote(v); kbVoices.delete(midi); }
+  const el = kbCells.get(midi);
+  if (el) el.classList.remove("held");
+}
+
+function buildKeyboard() {
+  const el = $("keyboard");
+  el.innerHTML = "";
+  kbCells.clear();
+  const letterFor = {};
+  Object.entries(keyMap).forEach(([k, m]) => { letterFor[m] = k; });
+  for (let midi = 60; midi <= 72; midi++) {
+    const key = document.createElement("div");
+    key.className = "key" + (isBlack(midi) ? " black" : "");
+    const letter = letterFor[midi] ? letterFor[midi].toUpperCase() : "";
+    key.innerHTML = `${noteNames[midi % 12]}<br>${letter}`;
+    const down = (ev) => { ev.preventDefault(); kbNoteOn(midi); };
+    const up = () => kbNoteOff(midi);
+    key.addEventListener("mousedown", down);
+    key.addEventListener("mouseup", up);
+    key.addEventListener("mouseleave", up);
+    key.addEventListener("touchstart", down, { passive: false });
+    key.addEventListener("touchend", up);
+    kbCells.set(midi, key);
+    el.appendChild(key);
+  }
+}
+
+const pressedKeys = new Set();
+document.addEventListener("keydown", (e) => {
+  if (e.repeat || e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  const midi = keyMap[e.key.toLowerCase()];
+  if (midi && !pressedKeys.has(e.key)) { pressedKeys.add(e.key); kbNoteOn(midi); }
+});
+document.addEventListener("keyup", (e) => {
+  const midi = keyMap[e.key.toLowerCase()];
+  if (midi) { pressedKeys.delete(e.key); kbNoteOff(midi); }
+});
+
+// ---------- Song-Zustand (Speichern/Laden) ----------
+function setSliderAndParam(id, value, paramFn) {
+  if (value === undefined || value === null) return;
+  $(id).value = value;
+  paramFn(+value);
+}
+
+function getState() {
+  return {
+    bpm: +$("bpm").value,
+    swing: +$("swing").value,
+    master: +$("master").value,
+    instrument: $("instrument").value,
+    synth: {
+      wave: $("bassWave").value,
+      cutoff: +$("cutoff").value,
+      reso: +$("reso").value,
+      decay: +$("decay").value,
+      octave: +$("octave").value,
+    },
+    drums: drumTracks.map((t) => t.pattern.map((v) => (v ? 1 : 0))),
+    bass: { pattern: bassTrack.pattern.map((v) => (v ? 1 : 0)), notes: bassTrack.notes.slice() },
+    vocals: {
+      pitch: +$("vocPitch").value, filter: +$("vocFilter").value,
+      reverb: +$("vocReverb").value, delay: +$("vocDelay").value,
+      gain: +$("vocGain").value, loop: $("vocLoop").checked,
+    },
+  };
+}
+
+function applyState(s) {
+  if (!s) return;
+  setSliderAndParam("bpm", s.bpm, (v) => seq.setTempo(v));
+  setSliderAndParam("swing", s.swing, (v) => { seq.setSwing(v / 100); $("swingVal").textContent = v + "%"; });
+  engine.init();
+  setSliderAndParam("master", s.master, (v) => engine.setMasterVolume(v / 100));
+  if (s.instrument) $("instrument").value = s.instrument;
+
+  const sy = s.synth || {};
+  if (sy.wave) { $("bassWave").value = sy.wave; engine.bassParams.wave = sy.wave; }
+  setSliderAndParam("cutoff", sy.cutoff, (v) => engine.bassParams.cutoff = v);
+  setSliderAndParam("reso", sy.reso, (v) => engine.bassParams.reso = v);
+  setSliderAndParam("decay", sy.decay, (v) => engine.bassParams.decay = v);
+  if (sy.octave !== undefined) { $("octave").value = sy.octave; engine.bassParams.octave = +sy.octave; }
+
+  drumTracks.forEach((t, i) => {
+    const p = (s.drums && s.drums[i]) || [];
+    for (let k = 0; k < STEPS; k++) t.pattern[k] = !!p[k];
+  });
+  for (let k = 0; k < STEPS; k++) {
+    bassTrack.pattern[k] = !!(s.bass && s.bass.pattern && s.bass.pattern[k]);
+    bassTrack.notes[k] = (s.bass && s.bass.notes && s.bass.notes[k]) || null;
+  }
+  buildDrumGrid(); syncDrumGrid();
+  buildBassGrid(); syncBassGrid();
+
+  if (s.vocals) {
+    const v = s.vocals;
+    setSliderAndParam("vocPitch", v.pitch, () => {}); $("vocPitchVal").textContent = v.pitch;
+    $("vocFilter").value = v.filter; $("vocReverb").value = v.reverb;
+    $("vocDelay").value = v.delay; $("vocGain").value = v.gain;
+    $("vocLoop").checked = !!v.loop;
+    updateVocalParams();
+  }
+}
+
+// ---------- KI-Ergebnis auf die Grids anwenden ----------
+function applyAIResult(r) {
+  if (r.bpm) { $("bpm").value = Math.min(200, Math.max(60, r.bpm)); seq.setTempo(+$("bpm").value); }
+  const voices = ["kick", "clap", "snare", "hat", "ohat"];
+  drumTracks.forEach((t) => t.pattern.fill(false));
+  voices.forEach((voice, i) => {
+    const steps = (r.drums && r.drums[voice]) || [];
+    steps.forEach((s) => { if (s >= 0 && s < STEPS) drumTracks[i].pattern[s] = true; });
+  });
+  bassTrack.pattern.fill(false);
+  bassTrack.notes.fill(null);
+  (r.bass || []).forEach((b) => {
+    const nd = bassScale.find((n) => n.name === b.note);
+    if (nd && b.step >= 0 && b.step < STEPS) {
+      bassTrack.pattern[b.step] = true;
+      bassTrack.notes[b.step] = nd.midi;
+    }
+  });
+  buildDrumGrid(); syncDrumGrid();
+  buildBassGrid(); syncBassGrid();
+}
+
+// ---------- Song-Bar verdrahten ----------
+function refreshSongList() {
+  const sel = $("songSelect");
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— Gespeicherte Songs —</option>';
+  Songs.listSongs().forEach((name) => {
+    const o = document.createElement("option");
+    o.value = name; o.textContent = name;
+    sel.appendChild(o);
+  });
+  if (Songs.listSongs().includes(prev)) sel.value = prev;
+}
+
+$("songSave").addEventListener("click", () => {
+  const name = ($("songName").value || "").trim() || "Mein Techno-Song";
+  Songs.saveSong(name, getState());
+  refreshSongList();
+  $("songSelect").value = name;
+  statusEl.textContent = `Song „${name}" gespeichert. 💾`;
+});
+$("songLoad").addEventListener("click", () => {
+  const name = $("songSelect").value;
+  if (!name) return;
+  applyState(Songs.loadSong(name));
+  $("songName").value = name;
+  statusEl.textContent = `Song „${name}" geladen.`;
+});
+$("songDelete").addEventListener("click", () => {
+  const name = $("songSelect").value;
+  if (!name) return;
+  Songs.deleteSong(name);
+  refreshSongList();
+  statusEl.textContent = `Song „${name}" gelöscht.`;
+});
+$("songExport").addEventListener("click", async () => {
+  const name = ($("songName").value || "techno-song").trim();
+  const state = getState();
+  state.vocalAudio = await vocals.exportBase64(); // Gesang mit exportieren
+  Songs.downloadSong(name, state);
+});
+$("songImport").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const { name, state } = await Songs.readSongFile(file);
+    applyState(state);
+    if (state.vocalAudio) { await vocals.importBase64(state.vocalAudio); enableVocalButtons(); }
+    if (name) $("songName").value = name;
+    statusEl.textContent = `Song aus Datei geladen.`;
+  } catch (err) {
+    statusEl.textContent = "Datei konnte nicht geladen werden: " + err.message;
+  }
+  e.target.value = "";
+});
+
+// ---------- KI / Claude ----------
+function aiSay(msg, cls = "") { const el = $("aiStatus"); el.textContent = msg; el.className = "ai-status " + cls; }
+
+if (ai.hasKey) aiSay("API-Schlüssel hinterlegt. Beschreibe einen Stil und erzeuge ein Pattern. ✅", "ok");
+
+$("aiKeyBtn").addEventListener("click", () => {
+  const current = ai.hasKey ? "(bereits hinterlegt)" : "";
+  const key = window.prompt(
+    "Anthropic API-Schlüssel eingeben " + current +
+    "\n(wird nur lokal im Browser gespeichert):", "");
+  if (key === null) return;
+  ai.setKey(key);
+  aiSay(ai.hasKey ? "Schlüssel gespeichert. ✅" : "Schlüssel entfernt.", ai.hasKey ? "ok" : "");
+});
+
+$("aiGenerate").addEventListener("click", async () => {
+  if (!ai.hasKey) { aiSay("Bitte zuerst einen API-Schlüssel hinterlegen (Button rechts).", "err"); return; }
+  const prompt = $("aiPrompt").value;
+  aiSay("Claude komponiert … einen Moment ⏳", "busy");
+  $("aiGenerate").disabled = true;
+  try {
+    const result = await ai.generate(prompt);
+    applyAIResult(result);
+    aiSay("Fertig! " + (result.notes || "Pattern geladen. 🎶"), "ok");
+  } catch (err) {
+    aiSay("Fehler: " + err.message, "err");
+  } finally {
+    $("aiGenerate").disabled = false;
+  }
+});
+
+// ---------- Gesang ----------
+function vocSay(msg) { $("vocStatus").textContent = msg; }
+function enableVocalButtons() {
+  $("vocPlay").disabled = !vocals.hasRecording;
+  $("vocStop").disabled = !vocals.hasRecording;
+}
+function updateVocalParams() {
+  vocals.params.pitch = +$("vocPitch").value;
+  vocals.params.cutoff = +$("vocFilter").value;
+  vocals.params.reverb = +$("vocReverb").value / 100;
+  vocals.params.delay = +$("vocDelay").value / 100;
+  vocals.params.gain = +$("vocGain").value / 100;
+  vocals.loop = $("vocLoop").checked;
+}
+
+let recording = false;
+$("recBtn").addEventListener("click", async () => {
+  if (!vocals.supported) { vocSay("Aufnahme wird von diesem Browser nicht unterstützt."); return; }
+  if (!recording) {
+    try {
+      await vocals.startRecording();
+      recording = true;
+      $("recBtn").textContent = "■ Stoppen";
+      $("recBtn").classList.add("rec-on");
+      vocSay("Aufnahme läuft … singe los! 🎤");
+    } catch (err) {
+      vocSay("Mikrofon-Zugriff abgelehnt: " + err.message);
+    }
+  } else {
+    try {
+      const dur = await vocals.stopRecording();
+      vocSay(`Aufnahme gespeichert (${dur.toFixed(1)}s). Mit den Reglern verändern & abspielen.`);
+    } catch (err) {
+      vocSay("Aufnahme-Fehler: " + err.message);
+    }
+    recording = false;
+    $("recBtn").textContent = "● Aufnehmen";
+    $("recBtn").classList.remove("rec-on");
+    enableVocalButtons();
+  }
+});
+
+$("vocPlay").addEventListener("click", () => { updateVocalParams(); vocals.play(); });
+$("vocStop").addEventListener("click", () => vocals.stop());
+["vocFilter", "vocReverb", "vocDelay", "vocGain"].forEach((id) =>
+  $(id).addEventListener("input", updateVocalParams));
+$("vocPitch").addEventListener("input", (e) => { $("vocPitchVal").textContent = e.target.value; updateVocalParams(); });
+$("vocLoop").addEventListener("change", updateVocalParams);
+
 // ---------- Start ----------
 function init() {
   buildDrumGrid();
   buildBassGrid();
+  buildKeyboard();
   randomizeDrums();   // ein startklarer Techno-Beat
+  refreshSongList();
   initMidi();
   updatePlayBtn();
 }

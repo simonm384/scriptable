@@ -133,57 +133,66 @@ export class AudioEngine {
   // ---------- SYNTH-VOICES (Bass / Lead) ----------
 
   /**
-   * Spielt eine Note. type = "bass" | "lead".
+   * Spielt eine Note auf einem Instrument.
+   * type = "bass" | "lead" | "pluck" | "pad" | "keys".
    * midiNote = MIDI-Notennummer, velocity 0..1.
-   * Bei dur=null klingt die Note mit eigenem Decay aus (für Sequencer/Trigger).
+   * dur=null  -> getriggerte Note mit eigenem Decay (Step-Sequencer).
+   * dur≠null  -> gehaltene Note bis stopNote() (MIDI/Keyboard).
    */
   playNote(type, midiNote, t = this.now, velocity = 0.9, dur = null) {
     const p = this.bassParams;
     const freq = this._midiToFreq(midiNote + p.octave * 12);
-    const isLead = type === "lead";
 
     const filt = this.ctx.createBiquadFilter();
     filt.type = "lowpass";
-    filt.frequency.value = isLead ? Math.max(p.cutoff, 2000) : p.cutoff;
     filt.Q.value = p.reso;
 
     const amp = this.ctx.createGain();
-    const decay = p.decay / 1000;
-    amp.gain.setValueAtTime(0.0001, t);
-    amp.gain.linearRampToValueAtTime(velocity * (isLead ? 0.35 : 0.5), t + 0.005);
+    filt.connect(amp).connect(this.master);
 
     const oscs = [];
-    if (isLead) {
-      // zwei leicht verstimmte Saws -> fetter Stab
-      [-7, 7].forEach((cents) => {
-        const o = this.ctx.createOscillator();
-        o.type = "sawtooth";
-        o.frequency.value = freq;
-        o.detune.value = cents;
-        oscs.push(o);
-      });
-    } else {
+    const addOsc = (wave, detune = 0, mult = 1) => {
       const o = this.ctx.createOscillator();
-      o.type = p.wave;
-      o.frequency.value = freq;
+      o.type = wave;
+      o.frequency.value = freq * mult;
+      o.detune.value = detune;
+      o.connect(filt);
       oscs.push(o);
-      // Sub-Oszillator für mehr Druck
-      const sub = this.ctx.createOscillator();
-      sub.type = "sine";
-      sub.frequency.value = freq / 2;
-      oscs.push(sub);
-    }
+    };
 
-    oscs.forEach((o) => o.connect(filt));
-    filt.connect(amp).connect(this.master);
+    let peak, attack, cutoff;
+    switch (type) {
+      case "lead": // fetter, heller Stab
+        addOsc("sawtooth", -7); addOsc("sawtooth", 7);
+        peak = velocity * 0.32; attack = 0.005; cutoff = Math.max(p.cutoff, 2000); break;
+      case "pluck": // perkussiv, kurz
+        addOsc("triangle"); addOsc("sawtooth", 5);
+        peak = velocity * 0.4; attack = 0.002; cutoff = Math.max(p.cutoff, 1500); break;
+      case "pad": // weiches Flächeninstrument, langsamer Einsatz
+        addOsc("sawtooth", -9); addOsc("sawtooth", 9); addOsc("sine", 0, 0.5);
+        peak = velocity * 0.2; attack = 0.25; cutoff = p.cutoff; break;
+      case "keys": // klaviarähnlich (Grundton + Oktav-Oberton)
+        addOsc("triangle"); addOsc("sine", 0, 2);
+        peak = velocity * 0.4; attack = 0.004; cutoff = Math.max(p.cutoff, 2500); break;
+      case "bass":
+      default: // druckvoller Bass mit Sub-Oszillator
+        addOsc(p.wave); addOsc("sine", 0, 0.5);
+        peak = velocity * 0.5; attack = 0.005; cutoff = p.cutoff; break;
+    }
+    filt.frequency.value = cutoff;
+
+    const decay = p.decay / 1000;
+    amp.gain.setValueAtTime(0.0001, t);
+    amp.gain.linearRampToValueAtTime(peak, t + attack);
 
     let stopAt;
     if (dur === null) {
-      // getriggerte Note (Step-Sequencer)
-      amp.gain.exponentialRampToValueAtTime(0.0001, t + decay);
-      stopAt = t + decay + 0.02;
+      // getriggerte Note (Step-Sequencer): Pads klingen länger aus
+      const tail = type === "pad" ? Math.max(decay, 0.6) : decay;
+      amp.gain.exponentialRampToValueAtTime(0.0001, t + attack + tail);
+      stopAt = t + attack + tail + 0.05;
     } else {
-      // gehaltene Note (MIDI noteOn bis noteOff) – Release folgt bei stop()
+      // gehaltene Note – Release folgt bei stopNote()
       stopAt = null;
     }
 

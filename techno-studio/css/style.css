@@ -203,6 +203,63 @@ main { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
   color: var(--accent-2);
 }
 
+/* ---------- SONG BAR ---------- */
+.song-bar { padding: 12px 16px; }
+.panel-actions.wrap { flex-wrap: wrap; }
+.song-name, .ai-input, #songSelect {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 13px;
+  outline: none;
+}
+.song-name { width: 150px; }
+.sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+.file-label { display: inline-flex; align-items: center; cursor: pointer; }
+
+/* ---------- KEYBOARD ---------- */
+.kb-head { margin: 16px 0 8px; }
+.keyboard {
+  display: flex;
+  gap: 4px;
+  user-select: none;
+  flex-wrap: wrap;
+}
+.key {
+  flex: 1 1 0;
+  min-width: 34px;
+  height: 70px;
+  border-radius: 0 0 7px 7px;
+  background: linear-gradient(180deg, #2a2f3d, #1a1d27);
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 6px;
+  font-size: 10px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background .06s ease, transform .04s ease;
+}
+.key:hover { background: linear-gradient(180deg, #333a4c, #20242f); }
+.key.held { background: linear-gradient(180deg, var(--accent), #b51e44); color: #fff; transform: translateY(2px); }
+.key.black { background: linear-gradient(180deg, #14161d, #0c0d12); }
+.key.black.held { background: linear-gradient(180deg, var(--accent-2), #0f9d8c); color: #042; }
+
+/* ---------- AI PANEL ---------- */
+.ai-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.ai-input { flex: 1; min-width: 220px; }
+.ai-status { font-size: 12px; color: var(--muted); margin: 12px 0 0; }
+.ai-status.err { color: var(--accent); }
+.ai-status.ok { color: var(--accent-2); }
+.ai-status.busy { color: #e9c46a; }
+
+/* ---------- CHECKBOX ---------- */
+.chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.btn.rec-on { background: var(--accent); color: #fff; border-color: var(--accent); }
+
 @media (max-width: 760px) {
   .row-label { width: 60px; flex-basis: 60px; font-size: 9px; }
   .steps { gap: 3px; }
