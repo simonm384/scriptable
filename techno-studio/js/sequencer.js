@@ -12,12 +12,15 @@ export class Sequencer {
 
     this.currentStep = 0;
     this.nextNoteTime = 0;
+    this.startTime = 0;         // Audio-Zeit des allerersten Steps
+    this.bar = -1;              // aktueller Takt seit Start
     this.lookahead = 25;        // ms zwischen Timer-Ticks
     this.scheduleAhead = 0.1;   // s, die im Voraus geplant werden
     this._timer = null;
 
     this.tracks = [];   // [{ name, voice, pattern:[bool], note? }]
     this.onStep = null; // Callback fürs UI: (stepIndex) => void  (-1 = gestoppt)
+    this.onBar = null;  // Callback bei Taktbeginn: (barIndex) => void
   }
 
   setTempo(bpm) { this.bpm = bpm; }
@@ -29,7 +32,9 @@ export class Sequencer {
     this.engine.resume();
     this.isPlaying = true;
     this.currentStep = 0;
+    this.bar = -1;
     this.nextNoteTime = this.engine.now + 0.05;
+    this.startTime = this.nextNoteTime;
     this._scheduler();
   }
 
@@ -47,6 +52,11 @@ export class Sequencer {
   _scheduler() {
     if (!this.isPlaying) return;
     while (this.nextNoteTime < this.engine.now + this.scheduleAhead) {
+      // Taktbeginn: ggf. Pattern wechseln (Arrangement) BEVOR der Step geplant wird
+      if (this.currentStep === 0) {
+        this.bar++;
+        if (this.onBar) this.onBar(this.bar);
+      }
       this._scheduleStep(this.currentStep, this.nextNoteTime);
       // nächsten Step vorrücken
       this.nextNoteTime += this._secondsPerStep();

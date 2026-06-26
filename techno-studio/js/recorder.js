@@ -55,10 +55,9 @@ export class VocalRecorder {
     });
   }
 
-  // Hall-Impulsantwort (kurzer, abklingender Rauschschwanz)
-  _getImpulse() {
-    if (this._impulse) return this._impulse;
-    const ctx = this.engine.ctx;
+  // Hall-Impulsantwort (kurzer, abklingender Rauschschwanz) für einen Kontext
+  _getImpulse(ctx = this.engine.ctx) {
+    if (ctx === this.engine.ctx && this._impulse) return this._impulse;
     const len = Math.floor(ctx.sampleRate * 1.8);
     const buf = ctx.createBuffer(2, len, ctx.sampleRate);
     for (let ch = 0; ch < 2; ch++) {
@@ -67,21 +66,15 @@ export class VocalRecorder {
         d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
       }
     }
-    this._impulse = buf;
+    if (ctx === this.engine.ctx) this._impulse = buf;
     return buf;
   }
 
-  /** Spielt die Aufnahme durch die Effektkette ab. */
-  play() {
-    if (!this.buffer) return;
-    this.stop();
-    const ctx = this.engine.ctx;
-    this.engine.resume();
-    const p = this.params;
-
+  // Baut Quelle + Effektkette in einem Kontext auf und startet sie.
+  _makeVoice(ctx, dest, startTime, p, loop, impulse) {
     const src = ctx.createBufferSource();
     src.buffer = this.buffer;
-    src.loop = this.loop;
+    src.loop = loop;
     src.detune.value = p.pitch * 100; // Halbtöne -> Cents
 
     const filt = ctx.createBiquadFilter();
@@ -91,19 +84,15 @@ export class VocalRecorder {
     const out = ctx.createGain();
     out.gain.value = p.gain;
 
-    // Dry-Signal
-    src.connect(filt);
-    filt.connect(out);
+    src.connect(filt).connect(out);          // Dry
 
-    // Hall (Convolver)
-    const verb = ctx.createConvolver();
-    verb.buffer = this._getImpulse();
+    const verb = ctx.createConvolver();        // Hall
+    verb.buffer = impulse || this._getImpulse(ctx);
     const verbWet = ctx.createGain();
     verbWet.gain.value = p.reverb;
     filt.connect(verb).connect(verbWet).connect(out);
 
-    // Echo (Delay mit Feedback)
-    const delay = ctx.createDelay(1.0);
+    const delay = ctx.createDelay(1.0);        // Echo
     delay.delayTime.value = 0.3;
     const fb = ctx.createGain();
     fb.gain.value = p.feedback;
@@ -113,10 +102,35 @@ export class VocalRecorder {
     delay.connect(fb).connect(delay);
     delay.connect(delayWet).connect(out);
 
-    out.connect(this.engine.master);
-    src.start();
-    this.voice = { src, out };
+    out.connect(dest);
+    src.start(startTime > 0 ? startTime : 0);
+    return src;
+  }
+
+  /**
+   * Spielt die Aufnahme live durch die Effektkette ab.
+   * startTime = Audio-Zeit (für taktgenauen Einsatz); 0 = sofort.
+   */
+  play(startTime = 0) {
+    if (!this.buffer) return;
+    this.stop();
+    this.engine.resume();
+    const src = this._makeVoice(this.engine.ctx, this.engine.master, startTime, this.params, this.loop);
+    this.voice = { src };
     src.onended = () => { if (this.voice && this.voice.src === src) this.voice = null; };
+  }
+
+  /** Rendert die (ggf. wiederholte) Gesangsspur in einen Offline-Kontext (WAV-Export). */
+  scheduleOffline(ctx, dest, startTime, endTime) {
+    if (!this.buffer) return;
+    const p = this.params;
+    const impulse = this._getImpulse(ctx);
+    const step = this.buffer.duration / Math.pow(2, p.pitch / 12);
+    let t = startTime, guard = 0;
+    do {
+      this._makeVoice(ctx, dest, t, p, false, impulse);
+      t += step;
+    } while (this.loop && t < endTime && ++guard < 2000);
   }
 
   stop() {
@@ -144,7 +158,7 @@ export class VocalRecorder {
 }
 
 // ---------- WAV-Kodierung (16-bit PCM) ----------
-function encodeWav(audioBuffer) {
+export function encodeWav(audioBuffer) {
   const numCh = audioBuffer.numberOfChannels;
   const sr = audioBuffer.sampleRate;
   const len = audioBuffer.length;

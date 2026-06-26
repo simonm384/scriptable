@@ -4,7 +4,7 @@ import { AudioEngine } from "./audio-engine.js";
 import { Sequencer } from "./sequencer.js";
 import { MidiController } from "./midi.js";
 import { AIComposer } from "./ai.js";
-import { VocalRecorder } from "./recorder.js";
+import { VocalRecorder, encodeWav } from "./recorder.js";
 import * as Songs from "./storage.js";
 
 const engine = new AudioEngine();
@@ -50,6 +50,40 @@ const bassTrack = {
 };
 
 seq.tracks = [...drumTracks, bassTrack];
+
+// ---------- Patterns (A/B/C/D) & Arrangement ----------
+const NUM_PATTERNS = 4;
+const PATTERN_NAMES = ["A", "B", "C", "D"];
+
+function emptyPattern() {
+  return {
+    drums: drumDefs.map(() => new Array(STEPS).fill(false)),
+    bassPattern: new Array(STEPS).fill(false),
+    bassNotes: new Array(STEPS).fill(null),
+  };
+}
+let patterns = Array.from({ length: NUM_PATTERNS }, emptyPattern);
+let editIndex = 0;        // angezeigtes/bearbeitetes Pattern
+let playIndex = 0;        // gerade klingendes Pattern (Arrangement)
+let arrangement = [];     // Liste von Pattern-Indizes (Takte)
+let arrangementOn = false;
+let arrPlayPos = 0;
+
+// "Live"-Objekte (drumTracks/bassTrack) sind die Arbeitskopie des aktiven Patterns.
+function saveLiveToPattern(i) {
+  const p = patterns[i];
+  drumTracks.forEach((t, di) => { p.drums[di] = t.pattern.slice(); });
+  p.bassPattern = bassTrack.pattern.slice();
+  p.bassNotes = bassTrack.notes.slice();
+}
+function loadPatternToLive(i) {
+  const p = patterns[i];
+  drumTracks.forEach((t, di) => { for (let k = 0; k < STEPS; k++) t.pattern[k] = !!p.drums[di][k]; });
+  for (let k = 0; k < STEPS; k++) {
+    bassTrack.pattern[k] = !!p.bassPattern[k];
+    bassTrack.notes[k] = p.bassNotes[k] == null ? null : p.bassNotes[k];
+  }
+}
 
 // ---------- DOM-Referenzen ----------
 const $ = (id) => document.getElementById(id);
@@ -165,12 +199,32 @@ function updatePlayBtn() {
     ? "Läuft … viel Spaß! 🎛️"
     : "Gestoppt. Drücke ▶ oder die Leertaste.";
 }
-playBtn.addEventListener("click", () => { seq.toggle(); updatePlayBtn(); });
+let vocalSyncActive = false;
+
+function togglePlay() {
+  if (seq.isPlaying) {
+    seq.stop();
+    if (vocalSyncActive) { vocals.stop(); vocalSyncActive = false; }
+  } else {
+    seq.start();
+    // Gesang taktgenau zum ersten Schlag starten
+    if ($("vocSync").checked && vocals.hasRecording) {
+      updateVocalParams();
+      vocals.loop = true;
+      vocals.play(seq.startTime);
+      vocalSyncActive = true;
+    }
+  }
+  updatePlayBtn();
+  updatePatternTabs();
+  updateArrangementPlayhead();
+}
+
+playBtn.addEventListener("click", togglePlay);
 document.addEventListener("keydown", (e) => {
   if (e.code === "Space" && e.target.tagName !== "INPUT" && e.target.tagName !== "SELECT") {
     e.preventDefault();
-    seq.toggle();
-    updatePlayBtn();
+    togglePlay();
   }
 });
 
@@ -399,7 +453,19 @@ function setSliderAndParam(id, value, paramFn) {
   paramFn(+value);
 }
 
+function normBool16(a) {
+  const r = new Array(STEPS).fill(false);
+  (a || []).forEach((v, i) => { if (i < STEPS) r[i] = !!v; });
+  return r;
+}
+function normNotes16(a) {
+  const r = new Array(STEPS).fill(null);
+  (a || []).forEach((v, i) => { if (i < STEPS) r[i] = (v == null ? null : v); });
+  return r;
+}
+
 function getState() {
+  saveLiveToPattern(editIndex);
   return {
     bpm: +$("bpm").value,
     swing: +$("swing").value,
@@ -412,12 +478,18 @@ function getState() {
       decay: +$("decay").value,
       octave: +$("octave").value,
     },
-    drums: drumTracks.map((t) => t.pattern.map((v) => (v ? 1 : 0))),
-    bass: { pattern: bassTrack.pattern.map((v) => (v ? 1 : 0)), notes: bassTrack.notes.slice() },
+    patterns: patterns.map((p) => ({
+      drums: p.drums.map((a) => a.map((v) => (v ? 1 : 0))),
+      bassPattern: p.bassPattern.map((v) => (v ? 1 : 0)),
+      bassNotes: p.bassNotes.slice(),
+    })),
+    editIndex,
+    arrangement: arrangement.slice(),
+    arrangementOn,
     vocals: {
       pitch: +$("vocPitch").value, filter: +$("vocFilter").value,
       reverb: +$("vocReverb").value, delay: +$("vocDelay").value,
-      gain: +$("vocGain").value, loop: $("vocLoop").checked,
+      gain: +$("vocGain").value, loop: $("vocLoop").checked, sync: $("vocSync").checked,
     },
   };
 }
@@ -437,14 +509,33 @@ function applyState(s) {
   setSliderAndParam("decay", sy.decay, (v) => engine.bassParams.decay = v);
   if (sy.octave !== undefined) { $("octave").value = sy.octave; engine.bassParams.octave = +sy.octave; }
 
-  drumTracks.forEach((t, i) => {
-    const p = (s.drums && s.drums[i]) || [];
-    for (let k = 0; k < STEPS; k++) t.pattern[k] = !!p[k];
-  });
-  for (let k = 0; k < STEPS; k++) {
-    bassTrack.pattern[k] = !!(s.bass && s.bass.pattern && s.bass.pattern[k]);
-    bassTrack.notes[k] = (s.bass && s.bass.notes && s.bass.notes[k]) || null;
+  // Patterns laden (neues Format) bzw. altes Einzel-Pattern-Format konvertieren
+  patterns = Array.from({ length: NUM_PATTERNS }, emptyPattern);
+  if (Array.isArray(s.patterns)) {
+    for (let i = 0; i < NUM_PATTERNS; i++) {
+      const sp = s.patterns[i];
+      if (!sp) continue;
+      patterns[i] = {
+        drums: drumDefs.map((_, di) => normBool16(sp.drums && sp.drums[di])),
+        bassPattern: normBool16(sp.bassPattern),
+        bassNotes: normNotes16(sp.bassNotes),
+      };
+    }
+  } else if (s.drums) {
+    patterns[0] = {
+      drums: drumDefs.map((_, di) => normBool16(s.drums[di])),
+      bassPattern: normBool16(s.bass && s.bass.pattern),
+      bassNotes: normNotes16(s.bass && s.bass.notes),
+    };
   }
+  editIndex = Math.min(NUM_PATTERNS - 1, Math.max(0, s.editIndex || 0));
+  arrangement = Array.isArray(s.arrangement) ? s.arrangement.filter((n) => n >= 0 && n < NUM_PATTERNS) : [];
+  arrangementOn = !!s.arrangementOn;
+  $("arrOn").checked = arrangementOn;
+
+  loadPatternToLive(editIndex);
+  buildPatternTabs();
+  buildArrangement();
   buildDrumGrid(); syncDrumGrid();
   buildBassGrid(); syncBassGrid();
 
@@ -454,6 +545,7 @@ function applyState(s) {
     $("vocFilter").value = v.filter; $("vocReverb").value = v.reverb;
     $("vocDelay").value = v.delay; $("vocGain").value = v.gain;
     $("vocLoop").checked = !!v.loop;
+    if (v.sync !== undefined) $("vocSync").checked = !!v.sync;
     updateVocalParams();
   }
 }
@@ -478,7 +570,162 @@ function applyAIResult(r) {
   });
   buildDrumGrid(); syncDrumGrid();
   buildBassGrid(); syncBassGrid();
+  saveLiveToPattern(editIndex);
 }
+
+// ---------- Pattern-Reiter & Arrangement (UI) ----------
+function selectPattern(i) {
+  saveLiveToPattern(editIndex);
+  editIndex = i;
+  loadPatternToLive(i);
+  syncDrumGrid(); syncBassGrid();
+  updatePatternTabs();
+}
+
+function buildPatternTabs() {
+  const el = $("patternTabs");
+  el.innerHTML = "";
+  PATTERN_NAMES.forEach((name, i) => {
+    const b = document.createElement("button");
+    b.className = "tab";
+    b.textContent = name;
+    b.addEventListener("click", () => selectPattern(i));
+    el.appendChild(b);
+  });
+  updatePatternTabs();
+}
+function updatePatternTabs() {
+  const tabs = $("patternTabs").children;
+  for (let i = 0; i < tabs.length; i++) {
+    tabs[i].classList.toggle("active", i === editIndex);
+    tabs[i].classList.toggle("playing", seq.isPlaying && arrangementOn && i === playIndex);
+  }
+}
+
+function buildArrangement() {
+  const el = $("arrangement");
+  el.innerHTML = "";
+  arrangement.forEach((pi, idx) => {
+    const s = document.createElement("div");
+    s.className = "slot";
+    s.textContent = PATTERN_NAMES[pi];
+    s.title = "Klicken zum Wechseln";
+    s.addEventListener("click", () => {
+      arrangement[idx] = (arrangement[idx] + 1) % NUM_PATTERNS;
+      buildArrangement();
+    });
+    el.appendChild(s);
+  });
+  updateArrangementPlayhead();
+}
+function updateArrangementPlayhead() {
+  const slots = $("arrangement").children;
+  for (let i = 0; i < slots.length; i++) {
+    slots[i].classList.toggle("playing", seq.isPlaying && arrangementOn && i === arrPlayPos);
+  }
+}
+
+// Pattern-Wechsel je Takt (Arrangement-Wiedergabe)
+seq.onBar = (bar) => {
+  if (!arrangementOn || arrangement.length === 0) { playIndex = editIndex; return; }
+  arrPlayPos = bar % arrangement.length;
+  const pi = arrangement[arrPlayPos];
+  if (pi !== editIndex) selectPattern(pi);
+  playIndex = pi;
+  updateArrangementPlayhead();
+  updatePatternTabs();
+};
+
+$("patternCopy").addEventListener("click", () => {
+  saveLiveToPattern(editIndex);
+  const target = (editIndex + 1) % NUM_PATTERNS;
+  patterns[target] = JSON.parse(JSON.stringify(patterns[editIndex]));
+  statusEl.textContent = `Pattern ${PATTERN_NAMES[editIndex]} → ${PATTERN_NAMES[target]} kopiert.`;
+});
+$("patternClear").addEventListener("click", () => {
+  drumTracks.forEach((t) => t.pattern.fill(false));
+  bassTrack.pattern.fill(false);
+  bassTrack.notes.fill(null);
+  syncDrumGrid(); syncBassGrid();
+  saveLiveToPattern(editIndex);
+});
+$("arrAdd").addEventListener("click", () => { arrangement.push(editIndex); buildArrangement(); });
+$("arrRemove").addEventListener("click", () => { arrangement.pop(); buildArrangement(); });
+$("arrClear").addEventListener("click", () => { arrangement = []; buildArrangement(); });
+$("arrOn").addEventListener("change", (e) => {
+  arrangementOn = e.target.checked;
+  updatePatternTabs();
+  updateArrangementPlayhead();
+});
+
+// ---------- WAV-Export des ganzen Tracks ----------
+function triggerOffline(eng, voice, t) {
+  switch (voice) {
+    case "kick":  eng.kick(t); break;
+    case "clap":  eng.clap(t); break;
+    case "snare": eng.snare(t); break;
+    case "hat":   eng.hat(t, false); break;
+    case "ohat":  eng.hat(t, true); break;
+  }
+}
+
+async function exportWav() {
+  saveLiveToPattern(editIndex);
+  const bpm = +$("bpm").value;
+  const sps = (60 / bpm) / 4;
+  const swing = +$("swing").value / 100;
+  const bars = arrangement.length ? arrangement.slice() : [editIndex, editIndex, editIndex, editIndex];
+  const totalSteps = bars.length * STEPS;
+  const sr = engine.ctx ? engine.ctx.sampleRate : 44100;
+  const t0 = 0.05;
+  const tail = 2.0; // Ausklang für Hall/Decay
+  const duration = t0 + totalSteps * sps + tail;
+
+  const offline = new OfflineAudioContext(2, Math.ceil(duration * sr), sr);
+  const oeng = new AudioEngine();
+  oeng.useOfflineContext(offline, engine.master ? engine.master.gain.value : 0.8);
+  oeng.bassParams = { ...engine.bassParams };
+
+  bars.forEach((pi, bar) => {
+    const p = patterns[pi];
+    for (let s = 0; s < STEPS; s++) {
+      const t = t0 + (bar * STEPS + s) * sps + (s % 2 === 1 ? sps * swing : 0);
+      drumDefs.forEach((d, di) => { if (p.drums[di][s]) triggerOffline(oeng, d.voice, t); });
+      if (p.bassPattern[s]) oeng.playNote("bass", p.bassNotes[s], t, 0.9, null);
+    }
+  });
+
+  // Gesang mitrendern, wenn "Im Takt mitlaufen" aktiv ist
+  if ($("vocSync").checked && vocals.hasRecording) {
+    updateVocalParams();
+    vocals.loop = true;
+    vocals.scheduleOffline(offline, oeng.master, t0, t0 + totalSteps * sps);
+  }
+
+  const buffer = await offline.startRendering();
+  const blob = new Blob([encodeWav(buffer)], { type: "audio/wav" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = (($("songName").value || "techno-track").trim().replace(/[^\w.-]+/g, "_")) + ".wav";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+$("wavExport").addEventListener("click", async () => {
+  $("wavExport").disabled = true;
+  statusEl.textContent = "Rendere WAV … einen Moment ⏳";
+  try {
+    await exportWav();
+    statusEl.textContent = "WAV-Datei exportiert. 🎵";
+  } catch (err) {
+    statusEl.textContent = "Export-Fehler: " + err.message;
+  } finally {
+    $("wavExport").disabled = false;
+  }
+});
 
 // ---------- Song-Bar verdrahten ----------
 function refreshSongList() {
@@ -620,7 +867,10 @@ function init() {
   buildDrumGrid();
   buildBassGrid();
   buildKeyboard();
-  randomizeDrums();   // ein startklarer Techno-Beat
+  randomizeDrums();   // ein startklarer Techno-Beat in Pattern A
+  saveLiveToPattern(0);
+  buildPatternTabs();
+  buildArrangement();
   refreshSongList();
   initMidi();
   updatePlayBtn();

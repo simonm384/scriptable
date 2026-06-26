@@ -256,6 +256,41 @@ main { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
 .ai-status.ok { color: var(--accent-2); }
 .ai-status.busy { color: #e9c46a; }
 
+/* ---------- PATTERNS & ARRANGEMENT ---------- */
+.pattern-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+.pattern-tabs { display: flex; gap: 6px; }
+.tab {
+  width: 40px; height: 36px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .1s ease;
+}
+.tab:hover { border-color: var(--accent); }
+.tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.tab.playing { outline: 2px solid var(--accent-2); outline-offset: 1px; }
+
+.arr-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.arrangement { display: flex; gap: 6px; flex-wrap: wrap; min-height: 38px; }
+.slot {
+  width: 34px; height: 34px;
+  border-radius: 7px;
+  background: var(--step);
+  border: 1px solid var(--beat);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.slot:hover { border-color: var(--accent-2); }
+.slot.playing { background: var(--accent-2); color: #042; box-shadow: 0 0 10px rgba(24,224,200,.5); }
+.arrangement:empty::before { content: "— noch leer, „+ Takt" drücken —"; color: var(--muted); font-size: 12px; }
+
 /* ---------- CHECKBOX ---------- */
 .chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); cursor: pointer; }
 .btn.rec-on { background: var(--accent); color: #fff; border-color: var(--accent); }

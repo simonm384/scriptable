@@ -13,16 +13,25 @@ export class AudioEngine {
   init() {
     if (this.ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
-    this.ctx = new AC();
-    this.master = this.ctx.createGain();
-    this.master.gain.value = 0.8;
+    this._setup(new AC());
+  }
+
+  /** Nutzt einen OfflineAudioContext (für den WAV-Export). */
+  useOfflineContext(ctx, masterGain = 0.8) {
+    this._setup(ctx, masterGain);
+  }
+
+  _setup(ctx, masterGain = 0.8) {
+    this.ctx = ctx;
+    this.master = ctx.createGain();
+    this.master.gain.value = masterGain;
     // sanfter Limiter, damit nichts übersteuert
-    const comp = this.ctx.createDynamicsCompressor();
+    const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -8;
     comp.ratio.value = 12;
     comp.attack.value = 0.003;
     comp.release.value = 0.25;
-    this.master.connect(comp).connect(this.ctx.destination);
+    this.master.connect(comp).connect(ctx.destination);
     this._buildNoise();
   }
 

@@ -39,9 +39,12 @@ Dann im **Chrome** oder **Edge** öffnen: <http://localhost:8000>
 - 🥁 **Drum-Sequencer** (Kick, Clap, Snare, Hi-Hat, Open Hat)
 - 🎚️ **Bass-Sequencer** + spielbarer Synth
 - 🎹 **5 Instrumente** (Bass, Lead, Pluck, Pad, Keys) – per MIDI **oder** Bildschirm-Klaviatur spielbar
+- 🅰️ **4 Patterns (A–D)** für Variationen und Übergänge
+- 🎬 **Arrangement-Modus** – Patterns zu einem ganzen Track aneinanderreihen
+- 🎵 **WAV-Export** des kompletten Tracks (inkl. Gesang)
 - 💾 **Songs speichern & laden** (im Browser und als `.json`-Datei)
 - 🤖 **KI-Producer (Claude)** – beschreibe einen Stil, Claude baut Beat & Bassline
-- 🎤 **Gesang aufnehmen & verändern** (Tonhöhe, Filter, Hall, Echo)
+- 🎤 **Gesang aufnehmen, verändern & im Takt mitlaufen lassen**
 
 ## Bedienung
 
@@ -57,12 +60,23 @@ Dann im **Chrome** oder **Edge** öffnen: <http://localhost:8000>
 | **Klaviatur**      | Klicken oder Tasten `A S D F G H J K` (+ `W E T Y U` für Halbtöne)   |
 | **Zufall / Leeren**| Pattern automatisch erzeugen oder löschen                           |
 
-### Song speichern & laden
+### Patterns & Arrangement
 
-- **💾 Speichern** legt den Song unter dem eingegebenen Namen im Browser ab.
+- **Pattern-Reiter A–D**: vier eigenständige Patterns – ideal für Strophe/Drop/Break.
+  Auf einen Reiter klicken, um ihn zu bearbeiten.
+- **Kopieren →** dupliziert das aktuelle Pattern auf den nächsten Reiter (z. B. A→B als Variation).
+- **Arrangement**: mit **+ Takt** Takte aneinanderreihen; jeder Slot zeigt ein Pattern (anklicken
+  wechselt A/B/C/D). **„Arrangement abspielen"** aktivieren – der Sequencer spielt die Takte
+  der Reihe nach in Schleife. Der laufende Takt wird hervorgehoben.
+
+### Song speichern, laden & exportieren
+
+- **💾 Speichern** legt den Song (alle Patterns + Arrangement) im Browser ab.
 - **Laden / Löschen** über die Auswahlliste.
 - **⬇ Als Datei** exportiert den kompletten Song (inkl. Gesangsaufnahme) als `.json`.
 - **⬆ Datei laden** importiert eine solche Datei wieder.
+- **🎵 WAV exportieren** rendert den Track als Audiodatei: das **Arrangement**, falls vorhanden,
+  sonst 4 Takte des aktuellen Patterns. Mit aktivem „Im Takt mitlaufen" wird der Gesang mitgemischt.
 
 ### 🤖 KI-Producer (Claude)
 
@@ -78,7 +92,9 @@ Dann im **Chrome** oder **Edge** öffnen: <http://localhost:8000>
 
 1. **● Aufnehmen** klicken und Mikrofon-Zugriff erlauben → singen → **■ Stoppen**.
 2. **▶ Abspielen** und mit den Reglern **Tonhöhe, Filter, Hall, Echo** verändern.
-3. **Loop** aktiviert die Endloswiedergabe. Die Aufnahme wird beim Datei-Export mitgespeichert.
+3. **Loop** aktiviert die Endloswiedergabe.
+4. **Im Takt mitlaufen** startet den Gesang automatisch auf dem ersten Schlag, wenn du den
+   Sequencer startest – so läuft er synchron zum Beat (und wird beim WAV-Export mitgemischt).
 
 ### MIDI-Keyboard / Controller
 

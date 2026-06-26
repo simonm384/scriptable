@@ -56,7 +56,33 @@
         <label class="btn small file-label">⬆ Datei laden
           <input id="songImport" type="file" accept="application/json,.json" hidden />
         </label>
+        <span class="sep"></span>
+        <button id="wavExport" class="btn small">🎵 WAV exportieren</button>
       </div>
+    </section>
+
+    <!-- PATTERNS & ARRANGEMENT -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Patterns &amp; Arrangement</h2>
+        <div class="panel-actions">
+          <button id="patternCopy" class="btn small">Kopieren →</button>
+          <button id="patternClear" class="btn small">Pattern leeren</button>
+        </div>
+      </div>
+      <div class="pattern-row">
+        <span class="lbl">Pattern:</span>
+        <div id="patternTabs" class="pattern-tabs"></div>
+      </div>
+      <div class="arr-head">
+        <span class="lbl">Arrangement (Takte):</span>
+        <label class="chk"><input type="checkbox" id="arrOn" /> Arrangement abspielen</label>
+        <button id="arrAdd" class="btn small">+ Takt</button>
+        <button id="arrRemove" class="btn small">− Takt</button>
+        <button id="arrClear" class="btn small">Leeren</button>
+      </div>
+      <div id="arrangement" class="arrangement"></div>
+      <p class="hint">Tipp: Patterns mit den Reitern A–D bearbeiten · im Arrangement Takte aneinanderreihen (Slot anklicken = Pattern wechseln).</p>
     </section>
 
     <!-- DRUM SEQUENCER -->
@@ -160,6 +186,7 @@
           <button id="vocPlay" class="btn small" disabled>▶ Abspielen</button>
           <button id="vocStop" class="btn small" disabled>■ Stop</button>
           <label class="chk"><input type="checkbox" id="vocLoop" /> Loop</label>
+          <label class="chk"><input type="checkbox" id="vocSync" /> Im Takt mitlaufen</label>
         </div>
       </div>
       <div class="synth-controls">
