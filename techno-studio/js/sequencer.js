@@ -84,18 +84,23 @@ export class Sequencer {
 
   _trigger(track, t, step) {
     const e = this.engine;
+    const g = track.gain == null ? 1 : track.gain; // Lautstärke-Multiplikator der Spur
     // Eigenes Sample zugewiesen? -> als One-Shot abspielen statt Synth-Voice
-    if (track.buffer) { e.playSample(track.buffer, t, track.gain == null ? 1 : track.gain); return; }
+    if (track.buffer) { e.playSample(track.buffer, t, g); return; }
     // Melodische Tracks können pro Step eine eigene Tonhöhe in notes[] tragen.
     const note = track.notes ? track.notes[step] : track.note;
+    const B = Sequencer.VOICE_BASE_GAIN;
     switch (track.voice) {
-      case "kick":  e.kick(t); break;
-      case "clap":  e.clap(t); break;
-      case "snare": e.snare(t); break;
-      case "hat":   e.hat(t, false); break;
-      case "ohat":  e.hat(t, true); break;
-      case "bass":  e.playNote("bass", note, t, 0.9, null); break;
-      case "lead":  e.playNote("lead", note, t, 0.8, null); break;
+      case "kick":  e.kick(t, B.kick * g); break;
+      case "clap":  e.clap(t, B.clap * g); break;
+      case "snare": e.snare(t, B.snare * g); break;
+      case "hat":   e.hat(t, false, B.hat * g); break;
+      case "ohat":  e.hat(t, true, B.ohat * g); break;
+      case "bass":  e.playNote("bass", note, t, 0.9 * g, null); break;
+      case "lead":  e.playNote("lead", note, t, 0.8 * g, null); break;
     }
   }
 }
+
+// Natürliche Grundlautstärke je Drum-Voice (wird mit track.gain multipliziert)
+Sequencer.VOICE_BASE_GAIN = { kick: 1, clap: 0.7, snare: 0.7, hat: 0.4, ohat: 0.4 };

@@ -36,20 +36,31 @@ const bassScale = [
   { name: "C2",  midi: 36 },
 ];
 
-// Track-Objekte für den Sequencer
-const drumTracks = drumDefs.map((d) => ({
-  ...d,
-  pattern: new Array(STEPS).fill(false),
-}));
+// Track-Objekte für den Sequencer (drumTracks ist dynamisch: Spuren hinzufügbar)
+function makeTrack(name, voice) {
+  return { name, voice, gain: 1, sampleId: null, buffer: null, pattern: new Array(STEPS).fill(false) };
+}
+let drumTracks = drumDefs.map((d) => makeTrack(d.name, d.voice));
 
 const bassTrack = {
   name: "Bass",
   voice: "bass",
+  gain: 1,
   pattern: new Array(STEPS).fill(false), // aktiv ja/nein
   notes: new Array(STEPS).fill(null),    // Tonhöhe pro Step
 };
 
-seq.tracks = [...drumTracks, bassTrack];
+// Wählbare Synth-Drum-Stimmen (für die Spur-Zuweisung)
+const SYNTH_VOICES = [
+  { voice: "kick", label: "Kick" },
+  { voice: "clap", label: "Clap" },
+  { voice: "snare", label: "Snare" },
+  { voice: "hat", label: "Hi-Hat" },
+  { voice: "ohat", label: "Open Hat" },
+];
+
+function rebuildSeqTracks() { seq.tracks = [...drumTracks, bassTrack]; }
+rebuildSeqTracks();
 
 // ---------- Patterns (A/B/C/D) & Arrangement ----------
 const NUM_PATTERNS = 4;
@@ -57,7 +68,7 @@ const PATTERN_NAMES = ["A", "B", "C", "D"];
 
 function emptyPattern() {
   return {
-    drums: drumDefs.map(() => new Array(STEPS).fill(false)),
+    drums: drumTracks.map(() => new Array(STEPS).fill(false)),
     bassPattern: new Array(STEPS).fill(false),
     bassNotes: new Array(STEPS).fill(null),
   };
@@ -317,14 +328,11 @@ function blinkLed() {
 function setupMidiHandlers() {
   midi.on("activity", blinkLed);
   midi.on("noteOn", (note, vel) => {
-    engine.init(); engine.resume();
-    // dur = Infinity (≠ null) -> Note wird gehalten, bis noteOff den Release auslöst
-    const held = engine.playNote(currentInstrument(), note, engine.now, vel, Infinity);
-    heldVoices.set(note, held);
+    const held = instrumentNoteOn(currentInstrument(), note, vel);
+    if (held) heldVoices.set(note, held);
   });
   midi.on("noteOff", (note) => {
-    const v = heldVoices.get(note);
-    engine.stopNote(v);
+    instrumentNoteOff(heldVoices.get(note));
     heldVoices.delete(note);
   });
   midi.on("cc", (cc, value) => {
@@ -389,6 +397,25 @@ function currentInstrument() {
   return $("instrument").value || "bass";
 }
 
+// Spielt eine Note auf dem aktuell gewählten Instrument – Synth oder eigenes Sample (mit Tonhöhe).
+function instrumentNoteOn(inst, midi, vel) {
+  engine.init(); engine.resume();
+  if (inst.startsWith("sample:")) {
+    const s = sampleBank.find((x) => x.id === inst.slice(7));
+    if (!s || !s.buffer) return null;
+    // Sample = Aufnahme bei C4 (MIDI 60); Tonhöhe über Abspielrate (+ Oktav-Schalter)
+    const rate = Math.pow(2, (midi - 60) / 12 + (engine.bassParams.octave || 0));
+    const src = engine.playSample(s.buffer, engine.now, vel, rate);
+    return { sampleSrc: src };
+  }
+  return engine.playNote(inst, midi, engine.now, vel, Infinity);
+}
+function instrumentNoteOff(voice) {
+  if (!voice) return;
+  if (voice.sampleSrc) { try { voice.sampleSrc.stop(); } catch (e) { /* schon beendet */ } }
+  else engine.stopNote(voice);
+}
+
 // ---------- Bildschirm-Klaviatur ----------
 const keyMap = { a:60, w:61, s:62, e:63, d:64, f:65, t:66, g:67, y:68, h:69, u:70, j:71, k:72 };
 const noteNames = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
@@ -399,15 +426,14 @@ function isBlack(midi) { return [1,3,6,8,10].includes(midi % 12); }
 
 function kbNoteOn(midi, vel = 0.85) {
   if (kbVoices.has(midi)) return;
-  engine.init(); engine.resume();
-  const v = engine.playNote(currentInstrument(), midi, engine.now, vel, Infinity);
-  kbVoices.set(midi, v);
+  const v = instrumentNoteOn(currentInstrument(), midi, vel);
+  if (v) kbVoices.set(midi, v);
   const el = kbCells.get(midi);
   if (el) el.classList.add("held");
 }
 function kbNoteOff(midi) {
   const v = kbVoices.get(midi);
-  if (v) { engine.stopNote(v); kbVoices.delete(midi); }
+  if (v) { instrumentNoteOff(v); kbVoices.delete(midi); }
   const el = kbCells.get(midi);
   if (el) el.classList.remove("held");
 }
@@ -487,7 +513,8 @@ function getState() {
     arrangement: arrangement.slice(),
     arrangementOn,
     samples: sampleBank.map((s) => ({ id: s.id, name: s.name, b64: s.b64 })),
-    trackSources: drumTracks.map((t) => t.sampleId || null),
+    tracks: drumTracks.map((t) => ({ name: t.name, voice: t.voice, gain: t.gain == null ? 1 : t.gain, sampleId: t.sampleId || null })),
+    bassGain: bassTrack.gain == null ? 1 : bassTrack.gain,
     vocals: {
       pitch: +$("vocPitch").value, filter: +$("vocFilter").value,
       reverb: +$("vocReverb").value, delay: +$("vocDelay").value,
@@ -511,6 +538,25 @@ async function applyState(s) {
   setSliderAndParam("decay", sy.decay, (v) => engine.bassParams.decay = v);
   if (sy.octave !== undefined) { $("octave").value = sy.octave; engine.bassParams.octave = +sy.octave; }
 
+  // Spuren (Anzahl, Stimme, Lautstärke, Sample) wiederherstellen – VOR den Patterns
+  let defs;
+  if (Array.isArray(s.tracks) && s.tracks.length) {
+    defs = s.tracks;
+  } else {
+    defs = drumDefs.map((d, i) => ({
+      name: d.name, voice: d.voice, gain: 1,
+      sampleId: (s.trackSources && s.trackSources[i]) || null, // altes Format
+    }));
+  }
+  drumTracks = defs.map((td) => {
+    const t = makeTrack(td.name || "Spur", td.voice || "hat");
+    t.gain = td.gain == null ? 1 : td.gain;
+    t.sampleId = td.sampleId || null;
+    return t;
+  });
+  bassTrack.gain = s.bassGain == null ? 1 : s.bassGain;
+  rebuildSeqTracks();
+
   // Patterns laden (neues Format) bzw. altes Einzel-Pattern-Format konvertieren
   patterns = Array.from({ length: NUM_PATTERNS }, emptyPattern);
   if (Array.isArray(s.patterns)) {
@@ -518,14 +564,14 @@ async function applyState(s) {
       const sp = s.patterns[i];
       if (!sp) continue;
       patterns[i] = {
-        drums: drumDefs.map((_, di) => normBool16(sp.drums && sp.drums[di])),
+        drums: drumTracks.map((_, di) => normBool16(sp.drums && sp.drums[di])),
         bassPattern: normBool16(sp.bassPattern),
         bassNotes: normNotes16(sp.bassNotes),
       };
     }
   } else if (s.drums) {
     patterns[0] = {
-      drums: drumDefs.map((_, di) => normBool16(s.drums[di])),
+      drums: drumTracks.map((_, di) => normBool16(s.drums[di])),
       bassPattern: normBool16(s.bass && s.bass.pattern),
       bassNotes: normNotes16(s.bass && s.bass.notes),
     };
@@ -535,16 +581,19 @@ async function applyState(s) {
   arrangementOn = !!s.arrangementOn;
   $("arrOn").checked = arrangementOn;
 
+  // Eigene Sounds wiederherstellen und den Spuren zuordnen
+  await restoreSamples(s.samples);
+  drumTracks.forEach((t) => {
+    if (t.sampleId) { const sm = sampleBank.find((x) => x.id === t.sampleId); t.buffer = sm ? sm.buffer : null; }
+  });
+
   loadPatternToLive(editIndex);
   buildPatternTabs();
   buildArrangement();
   buildDrumGrid(); syncDrumGrid();
   buildBassGrid(); syncBassGrid();
-
-  // Eigene Sounds wiederherstellen und den Spuren zuweisen
-  await restoreSamples(s.samples);
-  drumTracks.forEach((t, i) => setTrackSource(t, (s.trackSources && s.trackSources[i]) || null));
   buildTrackInstruments();
+  rebuildInstrumentSelect();
 
   if (s.vocals) {
     const v = s.vocals;
@@ -562,9 +611,10 @@ function applyAIResult(r) {
   if (r.bpm) { $("bpm").value = Math.min(200, Math.max(60, r.bpm)); seq.setTempo(+$("bpm").value); }
   const voices = ["kick", "clap", "snare", "hat", "ohat"];
   drumTracks.forEach((t) => t.pattern.fill(false));
-  voices.forEach((voice, i) => {
+  voices.forEach((voice) => {
     const steps = (r.drums && r.drums[voice]) || [];
-    steps.forEach((s) => { if (s >= 0 && s < STEPS) drumTracks[i].pattern[s] = true; });
+    const ti = drumTracks.findIndex((t) => !t.sampleId && t.voice === voice);
+    if (ti >= 0) steps.forEach((s) => { if (s >= 0 && s < STEPS) drumTracks[ti].pattern[s] = true; });
   });
   bassTrack.pattern.fill(false);
   bassTrack.notes.fill(null);
@@ -666,13 +716,17 @@ $("arrOn").addEventListener("change", (e) => {
 });
 
 // ---------- WAV-Export des ganzen Tracks ----------
-function triggerOffline(eng, voice, t) {
-  switch (voice) {
-    case "kick":  eng.kick(t); break;
-    case "clap":  eng.clap(t); break;
-    case "snare": eng.snare(t); break;
-    case "hat":   eng.hat(t, false); break;
-    case "ohat":  eng.hat(t, true); break;
+const VOICE_BASE = { kick: 1, clap: 0.7, snare: 0.7, hat: 0.4, ohat: 0.4 };
+function triggerDrumOffline(eng, track, t) {
+  const g = track.gain == null ? 1 : track.gain;
+  if (track.buffer) { eng.playSample(track.buffer, t, g); return; }
+  const b = (VOICE_BASE[track.voice] == null ? 0.6 : VOICE_BASE[track.voice]) * g;
+  switch (track.voice) {
+    case "kick":  eng.kick(t, b); break;
+    case "clap":  eng.clap(t, b); break;
+    case "snare": eng.snare(t, b); break;
+    case "hat":   eng.hat(t, false, b); break;
+    case "ohat":  eng.hat(t, true, b); break;
   }
 }
 
@@ -697,13 +751,10 @@ async function exportWav() {
     const p = patterns[pi];
     for (let s = 0; s < STEPS; s++) {
       const t = t0 + (bar * STEPS + s) * sps + (s % 2 === 1 ? sps * swing : 0);
-      drumDefs.forEach((d, di) => {
-        if (!p.drums[di][s]) return;
-        const tr = drumTracks[di];
-        if (tr.buffer) oeng.playSample(tr.buffer, t, tr.gain == null ? 1 : tr.gain);
-        else triggerOffline(oeng, d.voice, t);
+      drumTracks.forEach((tr, di) => {
+        if (p.drums[di] && p.drums[di][s]) triggerDrumOffline(oeng, tr, t);
       });
-      if (p.bassPattern[s]) oeng.playNote("bass", p.bassNotes[s], t, 0.9, null);
+      if (p.bassPattern[s]) oeng.playNote("bass", p.bassNotes[s], t, 0.9 * (bassTrack.gain == null ? 1 : bassTrack.gain), null);
     }
   });
 
@@ -773,51 +824,131 @@ async function addSampleFile(file) {
   return true;
 }
 
-function setTrackSource(track, sampleId) {
-  track.sampleId = sampleId || null;
-  const s = sampleId ? sampleBank.find((x) => x.id === sampleId) : null;
-  track.buffer = s ? s.buffer : null;
+// Quelle einer Spur setzen: "voice:xxx" (Synth) oder "sample:id" (eigene Datei)
+function setTrackSource(track, value) {
+  if (value && value.startsWith("sample:")) {
+    const id = value.slice(7);
+    const s = sampleBank.find((x) => x.id === id);
+    track.sampleId = id;
+    track.buffer = s ? s.buffer : null;
+  } else if (value && value.startsWith("voice:")) {
+    track.voice = value.slice(6);
+    track.sampleId = null;
+    track.buffer = null;
+  }
+}
+function trackSourceValue(track) {
+  return track.sampleId ? "sample:" + track.sampleId : "voice:" + track.voice;
 }
 
 function previewTrack(track) {
   engine.init(); engine.resume();
+  if (track.buffer) { engine.playSample(track.buffer, engine.now, track.gain == null ? 1 : track.gain); return; }
+  if (track === bassTrack) { engine.playNote("bass", 36, engine.now, 0.9 * (track.gain == null ? 1 : track.gain), null); return; }
   seq._trigger(track, engine.now, 0);
+}
+
+function makeTrackRow(track, idx, isBass) {
+  const row = document.createElement("div");
+  row.className = "track-inst";
+
+  const name = document.createElement("div");
+  name.className = "ti-name";
+  name.innerHTML = `<span class="dot"></span>${track.name}`;
+
+  // Instrument-Auswahl (nur Drum-Spuren): Synth-Stimmen + eigene Samples
+  const sel = document.createElement("select");
+  if (isBass) {
+    const o = document.createElement("option");
+    o.textContent = "🎛️ Synth Bass";
+    sel.appendChild(o);
+    sel.disabled = true;
+  } else {
+    SYNTH_VOICES.forEach((v) => {
+      const o = document.createElement("option");
+      o.value = "voice:" + v.voice;
+      o.textContent = "🎛️ " + v.label;
+      sel.appendChild(o);
+    });
+    sampleBank.forEach((s) => {
+      const o = document.createElement("option");
+      o.value = "sample:" + s.id;
+      o.textContent = "🎵 " + s.name + (s.buffer ? "" : " (fehlt)");
+      sel.appendChild(o);
+    });
+    sel.value = trackSourceValue(track);
+    sel.addEventListener("change", () => setTrackSource(track, sel.value));
+  }
+
+  // Lautstärke-Regler
+  const vol = document.createElement("input");
+  vol.type = "range"; vol.min = 0; vol.max = 150;
+  vol.value = Math.round((track.gain == null ? 1 : track.gain) * 100);
+  vol.title = "Lautstärke";
+  vol.className = "ti-vol";
+  vol.addEventListener("input", () => { track.gain = +vol.value / 100; });
+
+  // Vorhören
+  const prev = document.createElement("button");
+  prev.className = "ti-prev";
+  prev.textContent = "▶";
+  prev.title = "Vorhören";
+  prev.addEventListener("click", () => previewTrack(track));
+
+  row.append(name, sel, vol, prev);
+
+  // Entfernen (nur Drum-Spuren, mind. 1 muss bleiben)
+  if (!isBass) {
+    const del = document.createElement("button");
+    del.className = "ti-prev ti-del";
+    del.textContent = "✕";
+    del.title = "Spur entfernen";
+    del.disabled = drumTracks.length <= 1;
+    del.addEventListener("click", () => removeTrack(idx));
+    row.append(del);
+  }
+  return row;
 }
 
 function buildTrackInstruments() {
   const el = $("trackInstruments");
   el.innerHTML = "";
-  drumTracks.forEach((track) => {
-    const row = document.createElement("div");
-    row.className = "track-inst";
+  drumTracks.forEach((track, i) => el.appendChild(makeTrackRow(track, i, false)));
+  el.appendChild(makeTrackRow(bassTrack, -1, true));
+}
 
-    const name = document.createElement("div");
-    name.className = "ti-name";
-    name.innerHTML = `<span class="dot"></span>${track.name}`;
-
-    const sel = document.createElement("select");
-    const synthOpt = document.createElement("option");
-    synthOpt.value = "";
-    synthOpt.textContent = "🎛️ Synth (Standard)";
-    sel.appendChild(synthOpt);
-    sampleBank.forEach((s) => {
-      const o = document.createElement("option");
-      o.value = s.id;
-      o.textContent = "🎵 " + s.name + (s.buffer ? "" : " (fehlt)");
-      sel.appendChild(o);
-    });
-    sel.value = track.sampleId || "";
-    sel.addEventListener("change", () => setTrackSource(track, sel.value));
-
-    const prev = document.createElement("button");
-    prev.className = "ti-prev";
-    prev.textContent = "▶";
-    prev.title = "Vorhören";
-    prev.addEventListener("click", () => previewTrack(track));
-
-    row.append(name, sel, prev);
-    el.appendChild(row);
+// Eigene Samples auch über die Klaviatur spielbar machen
+function rebuildInstrumentSelect() {
+  const sel = $("instrument");
+  const prev = sel.value;
+  Array.from(sel.querySelectorAll("option[data-sample]")).forEach((o) => o.remove());
+  sampleBank.forEach((s) => {
+    if (!s.buffer) return;
+    const o = document.createElement("option");
+    o.value = "sample:" + s.id;
+    o.dataset.sample = "1";
+    o.textContent = "🎵 " + s.name;
+    sel.appendChild(o);
   });
+  if (Array.from(sel.options).some((o) => o.value === prev)) sel.value = prev;
+}
+
+// ---------- Spuren hinzufügen / entfernen ----------
+function addTrack() {
+  const t = makeTrack("Spur " + (drumTracks.length + 1), "hat");
+  drumTracks.push(t);
+  patterns.forEach((p) => p.drums.push(new Array(STEPS).fill(false)));
+  rebuildSeqTracks();
+  buildDrumGrid(); syncDrumGrid();
+  buildTrackInstruments();
+}
+function removeTrack(idx) {
+  if (drumTracks.length <= 1) return;
+  drumTracks.splice(idx, 1);
+  patterns.forEach((p) => p.drums.splice(idx, 1));
+  rebuildSeqTracks();
+  buildDrumGrid(); syncDrumGrid();
+  buildTrackInstruments();
 }
 
 async function restoreSamples(list) {
@@ -834,13 +965,16 @@ async function restoreSamples(list) {
   }
 }
 
+$("addTrack").addEventListener("click", addTrack);
+
 $("sampleImport").addEventListener("change", async (e) => {
   const files = Array.from(e.target.files);
   $("sampleStatus").textContent = "Lade Dateien …";
   let ok = 0;
   for (const f of files) { if (await addSampleFile(f)) ok++; }
   buildTrackInstruments();
-  if (ok) $("sampleStatus").textContent = `${ok} Sound(s) geladen. Oben einer Spur zuweisen. 🎵`;
+  rebuildInstrumentSelect();
+  if (ok) $("sampleStatus").textContent = `${ok} Sound(s) geladen. Einer Spur zuweisen oder per Klaviatur spielen. 🎵`;
   e.target.value = "";
 });
 
@@ -1001,6 +1135,7 @@ function init() {
   buildPatternTabs();
   buildArrangement();
   buildTrackInstruments();
+  rebuildInstrumentSelect();
   refreshSongList();
   initMidi();
   updatePlayBtn();

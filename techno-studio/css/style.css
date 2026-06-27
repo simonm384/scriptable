@@ -313,6 +313,9 @@ main { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
   border: 1px solid var(--line); cursor: pointer; font-size: 12px;
 }
 .ti-prev:hover { border-color: var(--accent-2); }
+.ti-prev:disabled { opacity: .35; cursor: not-allowed; }
+.ti-vol { width: 90px; flex: 0 0 90px; }
+.ti-del:hover { border-color: var(--accent); }
 
 /* ---------- CHECKBOX ---------- */
 .chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); cursor: pointer; }
