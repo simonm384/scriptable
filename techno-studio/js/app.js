@@ -810,18 +810,41 @@ function base64ToArrayBuffer(b64) {
   return bytes.buffer;
 }
 
-async function addSampleFile(file) {
-  const arr = await file.arrayBuffer();
+async function addSampleBuffer(name, arrayBuffer) {
   let buffer;
   try {
-    buffer = await engine.decodeFile(arr.slice(0)); // Kopie: decodeAudioData "verbraucht" den Buffer
+    buffer = await engine.decodeFile(arrayBuffer.slice(0)); // Kopie: decodeAudioData "verbraucht" den Buffer
   } catch (err) {
-    $("sampleStatus").textContent = `„${file.name}" konnte nicht gelesen werden (Format?).`;
     return false;
   }
-  const b64 = arrayBufferToBase64(arr);
-  sampleBank.push({ id: "s" + (sampleSeq++), name: file.name.replace(/\.[^.]+$/, ""), buffer, b64 });
+  const b64 = arrayBufferToBase64(arrayBuffer);
+  sampleBank.push({ id: "s" + (sampleSeq++), name, buffer, b64 });
   return true;
+}
+
+async function addSampleFile(file) {
+  const ok = await addSampleBuffer(file.name.replace(/\.[^.]+$/, ""), await file.arrayBuffer());
+  if (!ok) $("sampleStatus").textContent = `„${file.name}" konnte nicht gelesen werden (Format?).`;
+  return ok;
+}
+
+// Mitgelieferte Starter-Sounds laden (aus dem Ordner /samples)
+async function loadStarterSounds() {
+  engine.init();
+  $("sampleStatus").textContent = "Lade Starter-Sounds …";
+  try {
+    const list = await (await fetch("samples/index.json")).json();
+    let ok = 0;
+    for (const item of list) {
+      const buf = await (await fetch("samples/" + item.file)).arrayBuffer();
+      if (await addSampleBuffer(item.name, buf)) ok++;
+    }
+    buildTrackInstruments();
+    rebuildInstrumentSelect();
+    $("sampleStatus").textContent = `${ok} Starter-Sounds geladen. 🎁 Einer Spur zuweisen oder per Klaviatur spielen.`;
+  } catch (e) {
+    $("sampleStatus").textContent = "Starter-Sounds nicht gefunden – bitte die App über localhost öffnen (start.bat).";
+  }
 }
 
 // Quelle einer Spur setzen: "voice:xxx" (Synth) oder "sample:id" (eigene Datei)
@@ -966,6 +989,7 @@ async function restoreSamples(list) {
 }
 
 $("addTrack").addEventListener("click", addTrack);
+$("starterSounds").addEventListener("click", loadStarterSounds);
 
 $("sampleImport").addEventListener("change", async (e) => {
   const files = Array.from(e.target.files);

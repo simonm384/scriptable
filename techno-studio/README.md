@@ -64,6 +64,9 @@ Dann im **Chrome** oder **Edge** öffnen: <http://localhost:8000>
 
 ### Spuren, Lautstärke & eigene Sounds
 
+- **🎁 Starter-Sounds** lädt mit einem Klick eine mitgelieferte Sammlung Techno-Samples
+  (909-Kick, Clap, Snare, Hats, Tom, Rim, Bass-Stab, FX) – sofort spielbereit. Die Dateien
+  liegen im Ordner `samples/`.
 - **+ Spur** fügt eine weitere Drum-Spur hinzu, **✕** entfernt sie (mind. eine bleibt).
 - **+ Sound-Datei(en) laden**: importiere eigene **WAV/MP3/OGG**-Dateien (z. B. eine eigene Kick
   oder ein Percussion-Sample). Mehrere Dateien auf einmal möglich.
