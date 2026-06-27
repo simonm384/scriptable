@@ -1,0 +1,38 @@
+[
+  {
+    "file": "kick_909.wav",
+    "name": "Kick 909"
+  },
+  {
+    "file": "clap.wav",
+    "name": "Clap"
+  },
+  {
+    "file": "snare.wav",
+    "name": "Snare"
+  },
+  {
+    "file": "hat_closed.wav",
+    "name": "Hat Closed"
+  },
+  {
+    "file": "hat_open.wav",
+    "name": "Hat Open"
+  },
+  {
+    "file": "tom.wav",
+    "name": "Tom"
+  },
+  {
+    "file": "rim.wav",
+    "name": "Rim"
+  },
+  {
+    "file": "bass_stab.wav",
+    "name": "Bass Stab"
+  },
+  {
+    "file": "zap.wav",
+    "name": "FX Zap"
+  }
+]
