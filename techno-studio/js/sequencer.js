@@ -84,6 +84,8 @@ export class Sequencer {
 
   _trigger(track, t, step) {
     const e = this.engine;
+    // Eigenes Sample zugewiesen? -> als One-Shot abspielen statt Synth-Voice
+    if (track.buffer) { e.playSample(track.buffer, t, track.gain == null ? 1 : track.gain); return; }
     // Melodische Tracks können pro Step eine eigene Tonhöhe in notes[] tragen.
     const note = track.notes ? track.notes[step] : track.note;
     switch (track.voice) {

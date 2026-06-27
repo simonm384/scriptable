@@ -45,6 +45,24 @@ export class AudioEngine {
 
   get now() { return this.ctx.currentTime; }
 
+  /** Dekodiert eine Audiodatei (ArrayBuffer) zu einem AudioBuffer. */
+  async decodeFile(arrayBuffer) {
+    this.init();
+    return await this.ctx.decodeAudioData(arrayBuffer);
+  }
+
+  /** Spielt ein geladenes Sample (AudioBuffer) als One-Shot. */
+  playSample(buffer, t = this.now, gain = 1, rate = 1) {
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = rate;
+    const g = this.ctx.createGain();
+    g.gain.value = gain;
+    src.connect(g).connect(this.master);
+    src.start(t);
+    return src;
+  }
+
   _buildNoise() {
     const len = this.ctx.sampleRate * 1.5;
     const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);

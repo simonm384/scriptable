@@ -486,6 +486,8 @@ function getState() {
     editIndex,
     arrangement: arrangement.slice(),
     arrangementOn,
+    samples: sampleBank.map((s) => ({ id: s.id, name: s.name, b64: s.b64 })),
+    trackSources: drumTracks.map((t) => t.sampleId || null),
     vocals: {
       pitch: +$("vocPitch").value, filter: +$("vocFilter").value,
       reverb: +$("vocReverb").value, delay: +$("vocDelay").value,
@@ -494,7 +496,7 @@ function getState() {
   };
 }
 
-function applyState(s) {
+async function applyState(s) {
   if (!s) return;
   setSliderAndParam("bpm", s.bpm, (v) => seq.setTempo(v));
   setSliderAndParam("swing", s.swing, (v) => { seq.setSwing(v / 100); $("swingVal").textContent = v + "%"; });
@@ -538,6 +540,11 @@ function applyState(s) {
   buildArrangement();
   buildDrumGrid(); syncDrumGrid();
   buildBassGrid(); syncBassGrid();
+
+  // Eigene Sounds wiederherstellen und den Spuren zuweisen
+  await restoreSamples(s.samples);
+  drumTracks.forEach((t, i) => setTrackSource(t, (s.trackSources && s.trackSources[i]) || null));
+  buildTrackInstruments();
 
   if (s.vocals) {
     const v = s.vocals;
@@ -690,7 +697,12 @@ async function exportWav() {
     const p = patterns[pi];
     for (let s = 0; s < STEPS; s++) {
       const t = t0 + (bar * STEPS + s) * sps + (s % 2 === 1 ? sps * swing : 0);
-      drumDefs.forEach((d, di) => { if (p.drums[di][s]) triggerOffline(oeng, d.voice, t); });
+      drumDefs.forEach((d, di) => {
+        if (!p.drums[di][s]) return;
+        const tr = drumTracks[di];
+        if (tr.buffer) oeng.playSample(tr.buffer, t, tr.gain == null ? 1 : tr.gain);
+        else triggerOffline(oeng, d.voice, t);
+      });
       if (p.bassPattern[s]) oeng.playNote("bass", p.bassNotes[s], t, 0.9, null);
     }
   });
@@ -727,6 +739,111 @@ $("wavExport").addEventListener("click", async () => {
   }
 });
 
+// ---------- Spuren & eigene Sounds (Samples) ----------
+const sampleBank = []; // [{ id, name, buffer, b64 }]
+let sampleSeq = 1;
+
+function arrayBufferToBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+function base64ToArrayBuffer(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+
+async function addSampleFile(file) {
+  const arr = await file.arrayBuffer();
+  let buffer;
+  try {
+    buffer = await engine.decodeFile(arr.slice(0)); // Kopie: decodeAudioData "verbraucht" den Buffer
+  } catch (err) {
+    $("sampleStatus").textContent = `„${file.name}" konnte nicht gelesen werden (Format?).`;
+    return false;
+  }
+  const b64 = arrayBufferToBase64(arr);
+  sampleBank.push({ id: "s" + (sampleSeq++), name: file.name.replace(/\.[^.]+$/, ""), buffer, b64 });
+  return true;
+}
+
+function setTrackSource(track, sampleId) {
+  track.sampleId = sampleId || null;
+  const s = sampleId ? sampleBank.find((x) => x.id === sampleId) : null;
+  track.buffer = s ? s.buffer : null;
+}
+
+function previewTrack(track) {
+  engine.init(); engine.resume();
+  seq._trigger(track, engine.now, 0);
+}
+
+function buildTrackInstruments() {
+  const el = $("trackInstruments");
+  el.innerHTML = "";
+  drumTracks.forEach((track) => {
+    const row = document.createElement("div");
+    row.className = "track-inst";
+
+    const name = document.createElement("div");
+    name.className = "ti-name";
+    name.innerHTML = `<span class="dot"></span>${track.name}`;
+
+    const sel = document.createElement("select");
+    const synthOpt = document.createElement("option");
+    synthOpt.value = "";
+    synthOpt.textContent = "🎛️ Synth (Standard)";
+    sel.appendChild(synthOpt);
+    sampleBank.forEach((s) => {
+      const o = document.createElement("option");
+      o.value = s.id;
+      o.textContent = "🎵 " + s.name + (s.buffer ? "" : " (fehlt)");
+      sel.appendChild(o);
+    });
+    sel.value = track.sampleId || "";
+    sel.addEventListener("change", () => setTrackSource(track, sel.value));
+
+    const prev = document.createElement("button");
+    prev.className = "ti-prev";
+    prev.textContent = "▶";
+    prev.title = "Vorhören";
+    prev.addEventListener("click", () => previewTrack(track));
+
+    row.append(name, sel, prev);
+    el.appendChild(row);
+  });
+}
+
+async function restoreSamples(list) {
+  sampleBank.length = 0;
+  if (!Array.isArray(list)) return;
+  for (const s of list) {
+    let buffer = null;
+    if (s.b64) {
+      try { buffer = await engine.decodeFile(base64ToArrayBuffer(s.b64)); } catch (e) { /* überspringen */ }
+    }
+    sampleBank.push({ id: s.id, name: s.name, buffer, b64: s.b64 || null });
+    const n = parseInt(String(s.id || "s0").replace(/\D/g, ""), 10);
+    if (!isNaN(n) && n >= sampleSeq) sampleSeq = n + 1;
+  }
+}
+
+$("sampleImport").addEventListener("change", async (e) => {
+  const files = Array.from(e.target.files);
+  $("sampleStatus").textContent = "Lade Dateien …";
+  let ok = 0;
+  for (const f of files) { if (await addSampleFile(f)) ok++; }
+  buildTrackInstruments();
+  if (ok) $("sampleStatus").textContent = `${ok} Sound(s) geladen. Oben einer Spur zuweisen. 🎵`;
+  e.target.value = "";
+});
+
 // ---------- Song-Bar verdrahten ----------
 function refreshSongList() {
   const sel = $("songSelect");
@@ -742,15 +859,27 @@ function refreshSongList() {
 
 $("songSave").addEventListener("click", () => {
   const name = ($("songName").value || "").trim() || "Mein Techno-Song";
-  Songs.saveSong(name, getState());
+  const state = getState();
+  try {
+    Songs.saveSong(name, state);
+    statusEl.textContent = `Song „${name}" gespeichert. 💾`;
+  } catch (err) {
+    // Browser-Speicher voll (oft wegen großer Sound-Dateien): ohne Audio speichern
+    try {
+      const slim = { ...state, samples: (state.samples || []).map((s) => ({ id: s.id, name: s.name })) };
+      Songs.saveSong(name, slim);
+      statusEl.textContent = `„${name}" gespeichert – ohne Sound-Dateien (zu groß für Browser-Speicher). Nutze „⬇ Als Datei" inkl. Sounds.`;
+    } catch (e2) {
+      statusEl.textContent = "Speichern fehlgeschlagen: Browser-Speicher voll.";
+    }
+  }
   refreshSongList();
   $("songSelect").value = name;
-  statusEl.textContent = `Song „${name}" gespeichert. 💾`;
 });
-$("songLoad").addEventListener("click", () => {
+$("songLoad").addEventListener("click", async () => {
   const name = $("songSelect").value;
   if (!name) return;
-  applyState(Songs.loadSong(name));
+  await applyState(Songs.loadSong(name));
   $("songName").value = name;
   statusEl.textContent = `Song „${name}" geladen.`;
 });
@@ -772,7 +901,7 @@ $("songImport").addEventListener("change", async (e) => {
   if (!file) return;
   try {
     const { name, state } = await Songs.readSongFile(file);
-    applyState(state);
+    await applyState(state);
     if (state.vocalAudio) { await vocals.importBase64(state.vocalAudio); enableVocalButtons(); }
     if (name) $("songName").value = name;
     statusEl.textContent = `Song aus Datei geladen.`;
@@ -871,6 +1000,7 @@ function init() {
   saveLiveToPattern(0);
   buildPatternTabs();
   buildArrangement();
+  buildTrackInstruments();
   refreshSongList();
   initMidi();
   updatePlayBtn();

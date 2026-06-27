@@ -39,6 +39,7 @@ Dann im **Chrome** oder **Edge** öffnen: <http://localhost:8000>
 - 🥁 **Drum-Sequencer** (Kick, Clap, Snare, Hi-Hat, Open Hat)
 - 🎚️ **Bass-Sequencer** + spielbarer Synth
 - 🎹 **5 Instrumente** (Bass, Lead, Pluck, Pad, Keys) – per MIDI **oder** Bildschirm-Klaviatur spielbar
+- 🔊 **Eigene Sounds laden** – WAV/MP3-Dateien importieren und einzelnen Spuren zuweisen
 - 🅰️ **4 Patterns (A–D)** für Variationen und Übergänge
 - 🎬 **Arrangement-Modus** – Patterns zu einem ganzen Track aneinanderreihen
 - 🎵 **WAV-Export** des kompletten Tracks (inkl. Gesang)
@@ -59,6 +60,16 @@ Dann im **Chrome** oder **Edge** öffnen: <http://localhost:8000>
 | **Instrument**     | Wähle das Instrument für MIDI-Keyboard und Bildschirm-Klaviatur      |
 | **Klaviatur**      | Klicken oder Tasten `A S D F G H J K` (+ `W E T Y U` für Halbtöne)   |
 | **Zufall / Leeren**| Pattern automatisch erzeugen oder löschen                           |
+
+### Spuren & eigene Sounds
+
+- **+ Sound-Datei(en) laden**: importiere eigene **WAV/MP3/OGG**-Dateien (z. B. eine eigene Kick
+  oder ein Percussion-Sample). Mehrere Dateien auf einmal möglich.
+- Jede Drum-Spur hat ein Auswahlmenü: **🎛️ Synth (Standard)** oder eine deiner geladenen Dateien.
+- **▶** hört die Spur kurz vor.
+- Geladene Sounds werden im **Datei-Export** (`.json`) mitgespeichert und sind beim
+  WAV-Export im Track enthalten. (Im Browser-Speicher werden sehr große Sounds ggf. ausgelassen –
+  dann den `.json`-Export nutzen.)
 
 ### Patterns & Arrangement
 
@@ -125,6 +136,7 @@ techno-studio/
     ├── sequencer.js    # präziser Step-Sequencer (Lookahead-Scheduling)
     ├── midi.js         # Web-MIDI-Anbindung
     ├── ai.js           # KI-Producer (Anthropic / Claude API)
+    │                   #   (Samples werden in audio-engine.js dekodiert & abgespielt)
     ├── recorder.js     # Gesangsaufnahme + Effektkette
     ├── storage.js      # Songs speichern/laden (localStorage & Datei)
     └── app.js          # verbindet UI, Sequencer, MIDI, KI, Gesang und Audio
